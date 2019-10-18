@@ -5,8 +5,10 @@ scrape_configs:
       module: [http_2xx]  # Look for a HTTP 200 response.
     static_configs:
       - targets:
-        - http://127.0.0.1:9090
-        - http://prometheus:9090
+        - http://127.0.0.1:9090/
+        - http://prometheus:9090/
+        - http://google.com/
+        - https://google.com/
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
