@@ -14,16 +14,65 @@ services:
     ports:
       - 9090:9090
 
+  prometheus-dummy-exporter:
+    image: gcr.io/google-containers/prometheus-dummy-exporter:v0.1.0
+    command: >
+      ./prometheus_dummy_exporter
+      --metric-name=foo
+      --metric-value=40
+      --port=8080
+    ports:
+      - 8080:8080
+
   blackbox-exporter: 
     image: prom/blackbox-exporter:latest
     ports:
-      - 9115
+      - 9115:9115
+
+  prometheus-to-sd-to-blackbox-exporter-proxy:
+    image: ruby:latest
+    ports:
+      - 8081:8081
+    environment:
+      - PORT=8081
+      - BLACKBOX_EXPORTER_HOST=blackbox-exporter:9115
+    command:
+      - /bin/sh
+      - -c
+      - |
+        ruby -- <<-EOF
+
+        require 'uri'
+        require 'webrick'
+
+        host = ENV['BLACKBOX_EXPORTER_HOST'] or raise "BLACKBOX_EXPORTER_HOST not set."
+        port = ENV['PORT'] || 8081
+
+        server = WEBrick::HTTPServer.new Port: port
+
+        server.mount_proc '/' do |req, res|
+          _, probe, mod, *url = req.unparsed_uri.split("/")
+
+          mod    = mod
+          target = url.join("/")
+
+          require 'net/http'
+          uri      = URI("http://#{host}/probe?target=#{target}&module=#{mod}")
+          body     = Net::HTTP.get(uri)
+          res.body = body
+        end
+
+        trap 'INT'  do server.shutdown end
+        trap 'TERM' do server.shutdown end
+
+        server.start
+        EOF
       
-  prometheus-to-sd:
-    image: gcr.io/google-containers/prometheus-to-sd:v0.3.2
-    links:
-      - blackbox-exporter
-    command: >
-      /monitor
-      --stackdriver-prefix=custom.googleapis.com
-      --source=machine:http://blackbox-exporter:9115/probe
+  # prometheus-to-sd:
+  #   image: gcr.io/google-containers/prometheus-to-sd:v0.3.2
+  #   links:
+  #     - blackbox-exporter
+  #   command: >
+  #     /monitor
+  #     --stackdriver-prefix=custom.googleapis.com
+  #     --source=backbox-exporter:http://prometheus-to-sd-to-blackbox-exporter-proxy:8081/probe/http_2xx/google.com
